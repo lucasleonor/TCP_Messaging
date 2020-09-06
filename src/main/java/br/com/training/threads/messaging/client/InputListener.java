@@ -1,15 +1,14 @@
 package br.com.training.threads.messaging.client;
 
-import lombok.SneakyThrows;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.PrintStream;
+import java.io.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class InputListener implements Runnable {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(InputListener.class);
     private final AtomicBoolean running;
     private final OutputStream outputStream;
 
@@ -18,7 +17,6 @@ public class InputListener implements Runnable {
         running = new AtomicBoolean(false);
     }
 
-    @SneakyThrows
     @Override
     public void run() {
         running.set(true);
@@ -30,6 +28,8 @@ public class InputListener implements Runnable {
                     if (!input.isBlank()) outputWriter.println(input);
                 }
             }
+        } catch (IOException e) {
+            LOGGER.error("IO Error: {}", e.getMessage());
         }
     }
 

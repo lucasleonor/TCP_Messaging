@@ -4,18 +4,22 @@ import lombok.SneakyThrows;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.net.Socket;
 import java.util.Map;
-import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MessagingManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(MessagingManager.class);
     private final ExecutorService threadPool;
     private final Map<String, Client> clientMap;
+    private final AtomicBoolean running;
 
     public MessagingManager() {
         threadPool = Executors.newCachedThreadPool(r -> {
@@ -24,6 +28,7 @@ public class MessagingManager {
             return thread;
         });
         clientMap = new ConcurrentHashMap<>();
+        running = new AtomicBoolean(false);
     }
 
     public void newConnection(Socket socket) {
@@ -31,34 +36,40 @@ public class MessagingManager {
             @SneakyThrows
             @Override
             public void run() {
-                Scanner inputReader = new Scanner(socket.getInputStream());
-                PrintStream outputWriter = new PrintStream(socket.getOutputStream());
-                String name = prepareClient(inputReader, outputWriter);
-                LOGGER.info("New client: {}", name);
+                running.set(true);
+                try (PrintStream outputWriter = new PrintStream(socket.getOutputStream());
+                     BufferedReader inputReader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+                    String name = prepareClient(inputReader, outputWriter);
+                    LOGGER.info("New client: {}", name);
 
-                while (inputReader.hasNextLine()) {
-                    String input = inputReader.nextLine().trim();
-                    if ("disconnect".equalsIgnoreCase(input)) {
-                        break;
+                    while (running.get()) {
+                        if (inputReader.ready()) {
+                            String input = inputReader.readLine().trim();
+                            if ("disconnect".equalsIgnoreCase(input)) {
+                                break;
+                            }
+                            readMessage(name, input, outputWriter);
+                        }
                     }
-                    readMessage(name, input, outputWriter);
+                    LOGGER.info("Client '{}' disconnected", name);
+                    Client client = clientMap.remove(name);
+                    client.disconnect();
                 }
-                LOGGER.info("Client '{}' disconnected", name);
-                Client client = clientMap.remove(name);
-                client.disconnect();
             }
 
-            private String prepareClient(Scanner input, PrintStream outputWriter) {
+            private String prepareClient(BufferedReader input, PrintStream outputWriter) throws IOException {
                 outputWriter.println("Please, enter your name");
                 String name = "";
-                while (name.isBlank()){
-                    name = input.nextLine().trim();
-                    if(clientMap.containsKey(name)){
-                        outputWriter.println("The name '"+name+"' is already being used. Try another one");
-                        name = "";
+                while (name.isBlank() && running.get()) {
+                    if (input.ready()) {
+                        name = input.readLine().trim();
+                        if (clientMap.containsKey(name)) {
+                            outputWriter.println("The name '" + name + "' is already being used. Try another one");
+                            name = "";
+                        }
                     }
                 }
-                outputWriter.println("Welcome "+name+"!\nTo send messages follow the pattern '{recipient}:{message}'");
+                outputWriter.println("Welcome " + name + "!\nTo send messages follow the pattern '{recipient}:{message}'");
                 Client client = new Client(name, outputWriter);
 
                 clientMap.put(name, client);
@@ -85,7 +96,8 @@ public class MessagingManager {
     }
 
     public void stop() {
-        for (Client client :clientMap.values()){
+        running.set(false);
+        for (Client client : clientMap.values()) {
             client.disconnect();
         }
         threadPool.shutdown();
