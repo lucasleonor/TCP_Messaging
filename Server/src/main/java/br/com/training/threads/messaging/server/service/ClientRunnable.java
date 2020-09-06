@@ -1,5 +1,6 @@
-package br.com.training.threads.messaging.server;
+package br.com.training.threads.messaging.server.service;
 
+import br.com.training.threads.messaging.server.Client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

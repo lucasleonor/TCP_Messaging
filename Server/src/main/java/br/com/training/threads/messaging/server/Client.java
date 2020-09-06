@@ -1,5 +1,6 @@
 package br.com.training.threads.messaging.server;
 
+import br.com.training.threads.messaging.server.service.ClientRunnable;
 import lombok.Getter;
 
 import java.io.PrintStream;

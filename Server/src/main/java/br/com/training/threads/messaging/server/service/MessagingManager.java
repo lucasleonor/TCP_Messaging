@@ -1,4 +1,8 @@
-package br.com.training.threads.messaging.server;
+package br.com.training.threads.messaging.server.service;
+
+import br.com.training.threads.messaging.server.Client;
+import br.com.training.threads.messaging.server.util.ExceptionHandler;
+import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -7,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@Service
 public class MessagingManager {
     private final ExecutorService threadPool;
     private final Map<String, Client> clientMap;
