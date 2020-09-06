@@ -1,27 +1,40 @@
 package br.com.training.threads.messaging.client;
 
+import lombok.SneakyThrows;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
-import java.util.Scanner;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class InputListener implements Runnable {
 
-    private final PrintStream outputWriter;
-    private final Scanner keyboardInput;
+    private final AtomicBoolean running;
+    private final OutputStream outputStream;
 
     public InputListener(OutputStream outputStream) {
-        outputWriter = new PrintStream(outputStream);
-        keyboardInput = new Scanner(System.in);
+        this.outputStream = outputStream;
+        running = new AtomicBoolean(false);
     }
 
+    @SneakyThrows
     @Override
     public void run() {
-        while(keyboardInput.hasNextLine()){
-            String input = keyboardInput.nextLine().trim();
-            if(!input.isBlank()) outputWriter.println(input);
+        running.set(true);
+        try (PrintStream outputWriter = new PrintStream(this.outputStream);
+             BufferedReader keyboardInput = new BufferedReader(new InputStreamReader(System.in))) {
+            while (running.get()) {
+                if (keyboardInput.ready()) {
+                    String input = keyboardInput.readLine().trim();
+                    if (!input.isBlank()) outputWriter.println(input);
+                }
+            }
         }
-
-        keyboardInput.close();
-        outputWriter.close();
     }
+
+    public void stop() {
+        running.set(false);
+    }
+
 }
