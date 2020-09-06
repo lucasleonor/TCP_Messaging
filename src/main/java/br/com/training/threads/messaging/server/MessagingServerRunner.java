@@ -36,6 +36,8 @@ public class MessagingServerRunner implements CommandLineRunner {
                                 e.printStackTrace();
                             }
                             running = false;
+                        } else if (!line.isEmpty()) {
+                            LOGGER.info("Invalid command {}", line);
                         }
                     }
                 }
