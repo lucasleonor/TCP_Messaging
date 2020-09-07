@@ -69,7 +69,7 @@ public class ClientRunnable implements Runnable {
             this.client = client.get();
         } else {
             sendMessage("Welcome " + username + "!\n" +
-                    "To send messages follow the pattern '{recipient}:{message}'");
+                    "To send messages follow the pattern '{recipient}:{message}' or type 'disconnect' to logout");
             this.client = messagingManager.register(new Client(username));
         }
         messagingManager.connect(this);

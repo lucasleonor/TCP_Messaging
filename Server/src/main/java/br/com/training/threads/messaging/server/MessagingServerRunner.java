@@ -30,6 +30,7 @@ public class MessagingServerRunner implements CommandLineRunner {
     public void run(String... args) throws Exception {
         new Thread(() -> {
             boolean running = true;
+            LOGGER.info("To shut the server down type 'shutdown', all clients will be disconnected");
             try (BufferedReader keyboardInput = new BufferedReader(new InputStreamReader(System.in))) {
                 while (running) {
                     if (keyboardInput.ready()) {
