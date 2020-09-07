@@ -37,7 +37,7 @@ public class MessagingManager {
     }
 
     public void newConnection(Socket socket) throws IOException {
-        threadPool.execute(new ClientRunnable(socket.getOutputStream(), socket.getInputStream(), this));
+        threadPool.execute(new ClientRunnable(socket, this));
     }
 
     public void stop() {

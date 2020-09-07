@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.net.Socket;
+import java.net.SocketException;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -13,30 +15,25 @@ public class ClientRunnable implements Runnable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientRunnable.class);
 
-    private final OutputStream outputStream;
-    private final InputStream inputStream;
-    private final MessagingManager service;
+    private final MessagingManager messagingManager;
     private final AtomicBoolean running;
+    private final PrintStream outputWriter;
+    private final BufferedReader inputReader;
 
     @Getter
     private Client client;
-    private PrintStream outputWriter;
-    private BufferedReader inputReader;
 
-    public ClientRunnable(OutputStream outputStream, InputStream inputStream, MessagingManager service) {
-        this.outputStream = outputStream;
-        this.inputStream = inputStream;
-        this.service = service;
+    public ClientRunnable(Socket socket, MessagingManager messagingManager) throws IOException {
+        this.messagingManager = messagingManager;
+        outputWriter = new PrintStream(socket.getOutputStream());
+        inputReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         running = new AtomicBoolean(false);
     }
 
     @Override
     public void run() {
         running.set(true);
-        try (PrintStream outputWriter = new PrintStream(outputStream);
-             BufferedReader inputReader = new BufferedReader(new InputStreamReader(inputStream))) {
-            this.outputWriter = outputWriter;
-            this.inputReader = inputReader;
+        try {
             prepareClient();
             LOGGER.info("New client: {}", client.getUsername());
 
@@ -50,15 +47,22 @@ public class ClientRunnable implements Runnable {
                 }
             }
             LOGGER.info("Client '{}' disconnected", client.getUsername());
-            service.disconnect(this);
         } catch (IOException e) {
             LOGGER.info("IO Error: {}", e.getMessage());
+        } finally {
+            messagingManager.disconnect(this);
+            outputWriter.close();
+            try {
+                inputReader.close();
+            } catch (IOException e) {
+                LOGGER.error("Error while closing inputReader: {}", e.getMessage());
+            }
         }
     }
 
     private void prepareClient() throws IOException {
         String username = getUsername();
-        Optional<Client> client = service.getClient(username);
+        Optional<Client> client = messagingManager.getClient(username);
         if (client.isPresent()) {
             sendMessage("Welcome back " + username + "!\n" +
                     "To send messages follow the pattern '{recipient}:{message}'");
@@ -66,9 +70,9 @@ public class ClientRunnable implements Runnable {
         } else {
             sendMessage("Welcome " + username + "!\n" +
                     "To send messages follow the pattern '{recipient}:{message}'");
-            this.client = service.register(new Client(username));
+            this.client = messagingManager.register(new Client(username));
         }
-        service.connect(this);
+        messagingManager.connect(this);
     }
 
     private String getUsername() throws IOException {
@@ -77,7 +81,7 @@ public class ClientRunnable implements Runnable {
         while (username.isBlank() && running.get()) {
             if (inputReader.ready()) {
                 username = fetchMessage();
-                if (service.checkUserConnected(username)) {
+                if (messagingManager.checkUserConnected(username)) {
                     sendMessage("The user '" + username + "' is already connected.");
                     username = "";
                 }
@@ -87,7 +91,12 @@ public class ClientRunnable implements Runnable {
     }
 
     private String fetchMessage() throws IOException {
-        return inputReader.readLine().trim();
+        try {
+            return inputReader.readLine().trim();
+        } catch (SocketException e) {
+            disconnect();
+            return "";
+        }
     }
 
     private void parseMessage(String text) {
@@ -98,7 +107,7 @@ public class ClientRunnable implements Runnable {
         }
         String recipient = input[0];
         String message = input[1].trim();
-        if (service.sendMessage(client, recipient, message)) {
+        if (messagingManager.sendMessage(client, recipient, message)) {
             sendMessage("Message sent successfully");
             LOGGER.info("New message from '{}', to '{}': {}", client.getUsername(), recipient, message);
         } else {
