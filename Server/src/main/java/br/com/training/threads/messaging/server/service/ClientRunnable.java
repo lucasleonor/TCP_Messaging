@@ -1,20 +1,27 @@
 package br.com.training.threads.messaging.server.service;
 
-import br.com.training.threads.messaging.server.Client;
+import br.com.training.threads.messaging.server.model.Client;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ClientRunnable implements Runnable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientRunnable.class);
+
     private final OutputStream outputStream;
     private final InputStream inputStream;
     private final MessagingManager service;
     private final AtomicBoolean running;
+
+    @Getter
     private Client client;
+    private PrintStream outputWriter;
+    private BufferedReader inputReader;
 
     public ClientRunnable(OutputStream outputStream, InputStream inputStream, MessagingManager service) {
         this.outputStream = outputStream;
@@ -28,62 +35,87 @@ public class ClientRunnable implements Runnable {
         running.set(true);
         try (PrintStream outputWriter = new PrintStream(outputStream);
              BufferedReader inputReader = new BufferedReader(new InputStreamReader(inputStream))) {
-            String name = prepareClient(inputReader, outputWriter);
-            LOGGER.info("New client: {}", name);
+            this.outputWriter = outputWriter;
+            this.inputReader = inputReader;
+            prepareClient();
+            LOGGER.info("New client: {}", client.getUsername());
 
             while (running.get()) {
                 if (inputReader.ready()) {
-                    String input = inputReader.readLine().trim();
+                    String input = fetchMessage();
                     if ("disconnect".equalsIgnoreCase(input)) {
                         break;
                     }
-                    readMessage(name, input, outputWriter);
+                    parseMessage(input);
                 }
             }
-            LOGGER.info("Client '{}' disconnected", name);
-            service.disconnect(client);
+            LOGGER.info("Client '{}' disconnected", client.getUsername());
+            service.disconnect(this);
         } catch (IOException e) {
             LOGGER.info("IO Error: {}", e.getMessage());
         }
     }
 
-    private String prepareClient(BufferedReader input, PrintStream outputWriter) throws IOException {
-        outputWriter.println("Please, enter your name");
-        String name = "";
-        while (name.isBlank() && running.get()) {
-            if (input.ready()) {
-                name = input.readLine().trim();
-                if (service.checkUsername(name)) {
-                    outputWriter.println("The name '" + name + "' is already being used. Try another one");
-                    name = "";
+    private void prepareClient() throws IOException {
+        String username = getUsername();
+        Optional<Client> client = service.getClient(username);
+        if (client.isPresent()) {
+            sendMessage("Welcome back " + username + "!\n" +
+                    "To send messages follow the pattern '{recipient}:{message}'");
+            this.client = client.get();
+        } else {
+            sendMessage("Welcome " + username + "!\n" +
+                    "To send messages follow the pattern '{recipient}:{message}'");
+            this.client = service.register(new Client(username));
+        }
+        service.connect(this);
+    }
+
+    private String getUsername() throws IOException {
+        sendMessage("Please, enter your username");
+        String username = "";
+        while (username.isBlank() && running.get()) {
+            if (inputReader.ready()) {
+                username = fetchMessage();
+                if (service.checkUserConnected(username)) {
+                    sendMessage("The user '" + username + "' is already connected.");
+                    username = "";
                 }
             }
         }
-        outputWriter.println("Welcome " + name + "!\nTo send messages follow the pattern '{recipient}:{message}'");
-        client = new Client(name, outputWriter, this);
-
-        service.connect(client);
-        return name;
+        return username;
     }
 
-    private void readMessage(String name, String text, PrintStream outputWriter) {
+    private String fetchMessage() throws IOException {
+        return inputReader.readLine().trim();
+    }
+
+    private void parseMessage(String text) {
         String[] input = text.split(":", 2);
         if (input.length != 2) {
-            outputWriter.println("Invalid input, it should follow the pattern '{recipient}:{message}'");
+            sendMessage("Invalid input, it should follow the pattern '{recipient}:{message}'");
             return;
         }
         String recipient = input[0];
-        if (!service.checkUsername(recipient)) {
-            outputWriter.println("Could not find recipient: " + recipient);
-            return;
-        }
         String message = input[1].trim();
-        service.get(recipient).sendMessage(name, message);
-        outputWriter.println("Message sent successfully");
-        LOGGER.info("New message from '{}', to '{}': {}", name, recipient, message);
+        if (service.sendMessage(client, recipient, message)) {
+            sendMessage("Message sent successfully");
+            LOGGER.info("New message from '{}', to '{}': {}", client.getUsername(), recipient, message);
+        } else {
+            sendMessage("Could not find recipient: " + recipient);
+        }
     }
 
-    public void stop() {
+    public void sendMessage(String from, String message) {
+        outputWriter.println(from + ": " + message);
+    }
+
+    private void sendMessage(String s) {
+        outputWriter.println(s);
+    }
+
+    public void disconnect() {
         running.set(false);
+        sendMessage("disconnect");
     }
 }

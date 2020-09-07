@@ -13,7 +13,7 @@ public class MessagingClientRunner implements CommandLineRunner {
 
 	@Override
 	public void run(String... args) throws Exception {
-		MessagingClient messagingServer = new MessagingClient();
-		messagingServer.run();
+		MessagingClient messagingClient = new MessagingClient();
+		messagingClient.run();
 	}
 }
